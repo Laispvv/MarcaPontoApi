@@ -10,12 +10,7 @@ namespace MarcaPontoAPI.Controllers
     public class BatePontoController : ControllerBase
     {
         private readonly string _address = "https://api.mockytonk.com/proxy/ab2198a3-cafd-49d5-8ace-baac64e72222";
-
-        [HttpGet]
-        public IActionResult Get()
-        {
-            return Ok("Home do BatePontoAPI");
-        }
+        SemaphoreSlim _semaphore = new SemaphoreSlim(5);
 
         // POST: BatePonto/Marcar
         [Route("Marcar"), HttpPost]
@@ -31,18 +26,27 @@ namespace MarcaPontoAPI.Controllers
 
                 var requisicao = new Requisicao() { IncludedAt = date, EmployeeId = EmployeeId, EmployerId = EmployerId };
 
-                var client = new HttpClient();
-                HttpResponseMessage response = await client.PostAsJsonAsync(_address, requisicao);
-                var result = await response.Content.ReadAsStringAsync();
-
-                if (!response.IsSuccessStatusCode)
-                    return BadRequest(result);
-                return Ok(result);
+                var result = MarcarApiLegado(requisicao);
+                Task.WaitAny(result);
+                if (!result.Result)
+                    return BadRequest("Houve um problema na marcação de ponto");
+                return Ok("Ponto Marcado!");
             }
             catch (InvalidDataException)
             {
                 return BadRequest("Data de marcação inválida");
             }
+        }
+        [Route("MarcarApiLegado"), HttpPost]
+        private async Task<bool> MarcarApiLegado(Requisicao requisicao)
+        {
+            var client = new HttpClient();
+            await _semaphore.WaitAsync();
+            HttpResponseMessage response = await client.PostAsJsonAsync(_address, requisicao);
+            _semaphore.Release();
+            if (!response.IsSuccessStatusCode)
+                return false;
+            return true;
         }
     }
 }
